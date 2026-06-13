@@ -1,5 +1,11 @@
 /* global supabase */
 
+/* ============================================================
+   QUAN TRỌNG: Mật khẩu giờ được lưu trên DB (settings table)
+   - Mặc định fallback vẫn giữ ở đây để an toàn khi chưa set.
+   - Sau khi set trên DB thì giá trị DB sẽ được dùng.
+   - Xem hướng dẫn SQL ở cuối file.
+============================================================ */
 const PASSCODE = "25052009";
 const DELETE_PASSCODE = "9999";
 
@@ -90,9 +96,12 @@ let pointsDbSynced = false;
 let pointsDbSaveTimer = null;
 let suppressPointsDbSave = false;
 
+let redemptionsCache = [];
+let APP_PASSCODES = { unlock: PASSCODE, delete: DELETE_PASSCODE };
+
 const LS_POINTS = "love_points";
 const LS_CHECKIN = "love_checkin";
-const LS_REDEMPTIONS = "love_redemptions";
+const LS_REDEMPTIONS = "love_redemptions"; // vẫn giữ để migrate 1 lần từ local -> DB (redemptions)
 
 const SHOP_ITEMS = [
   { id: "candy", icon: "🍬", name: "1 bịch kẹo dẻo", cost: 5000 },
@@ -109,6 +118,37 @@ function ymdLocal(d = new Date()) {
   const m = String(x.getMonth() + 1).padStart(2, "0");
   const day = String(x.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/* Hiệu ứng nhỏ xinh xắn (thả tim / lấp lánh khi check-in hoặc đổi quà) */
+function celebrate(kind = "heart") {
+  const emojis = kind === "spark" ? ["✨", "💖", "🌸"] : ["❤", "💗", "🧸", "💕"];
+  const container = document.body;
+  const count = 18;
+  for (let i = 0; i < count; i++) {
+    const el = document.createElement("div");
+    el.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+    el.style.position = "fixed";
+    el.style.left = Math.random() * 100 + "vw";
+    el.style.top = "-10px";
+    el.style.fontSize = (14 + Math.random() * 18) + "px";
+    el.style.opacity = "0.9";
+    el.style.zIndex = "9999";
+    el.style.pointerEvents = "none";
+    el.style.transition = "transform 1.6s cubic-bezier(.2,.6,.2,1), opacity 1.6s linear";
+    container.appendChild(el);
+
+    const dx = (Math.random() - 0.5) * 240;
+    const rot = (Math.random() - 0.5) * 80;
+    const dur = 1200 + Math.random() * 900;
+
+    requestAnimationFrame(() => {
+      el.style.transform = `translate(${dx}px, ${110 + Math.random()*30}vh) rotate(${rot}deg)`;
+      el.style.opacity = "0";
+    });
+
+    setTimeout(() => el.remove(), dur + 200);
+  }
 }
 
 function readJson(key, fallback) {
@@ -261,6 +301,126 @@ async function syncPointsStateFromDbOnce() {
   }
 }
 
+/* ===================== PASS CODES (từ DB) ===================== */
+async function loadPasscodes() {
+  if (!sb) return;
+  try {
+    const { data } = await sb
+      .from("settings")
+      .select("unlock_passcode, delete_passcode")
+      .eq("id", 1)
+      .maybeSingle();
+    if (data) {
+      if (data.unlock_passcode) APP_PASSCODES.unlock = String(data.unlock_passcode).trim();
+      if (data.delete_passcode) APP_PASSCODES.delete = String(data.delete_passcode).trim();
+    }
+  } catch {
+    // giữ giá trị fallback
+  }
+}
+
+/* ===================== REDEMPTIONS (DB) ===================== */
+async function listRedemptionsFromDb() {
+  if (!sb) return [];
+  const { data, error } = await sb
+    .from("love_redemptions")
+    .select("id, item_id, name, qty, spent, created_at")
+    .order("created_at", { ascending: false })
+    .limit(150);
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function addRedemptionsToDb(records) {
+  if (!sb || !records?.length) return;
+  const { error } = await sb.from("love_redemptions").insert(records);
+  if (error) throw error;
+}
+
+async function deleteRedemption(id) {
+  if (!sb || !id) return;
+  const { error } = await sb.from("love_redemptions").delete().eq("id", id);
+  if (error) throw error;
+}
+
+async function reloadRedemptionsCache() {
+  if (!sb) {
+    // fallback: giữ local cũ nếu không có sb (ít xảy ra)
+    redemptionsCache = getRedemptions();
+    return;
+  }
+  try {
+    let dbItems = await listRedemptionsFromDb();
+
+    // Auto-migrate 1 lần từ localStorage (lịch sử cũ) lên DB nếu DB trống
+    if (dbItems.length === 0) {
+      const localOld = getRedemptions();
+      if (localOld.length > 0) {
+        const payload = localOld.map((it) => ({
+          item_id: it.itemId || it.id || null,
+          name: it.name || "Quà",
+          qty: Number(it.qty) || 1,
+          spent: Number(it.spent) || 0,
+          created_at: it.createdAt || new Date().toISOString(),
+        }));
+        try {
+          await sb.from("love_redemptions").insert(payload);
+          dbItems = await listRedemptionsFromDb();
+          // dọn local sau khi migrate thành công
+          writeJson(LS_REDEMPTIONS, []);
+        } catch {}
+      }
+    }
+    redemptionsCache = dbItems;
+  } catch {
+    redemptionsCache = [];
+  }
+}
+
+function renderRedemptions() {
+  if (!els.redemptionList) return;
+  const items = redemptionsCache || [];
+  els.redemptionList.innerHTML = "";
+  if (!items.length) {
+    els.redemptionList.innerHTML = `<div class="item"><div class="muted">Chưa đổi quà nào.</div></div>`;
+    return;
+  }
+
+  let totalSpent = 0;
+  for (const it of items) {
+    totalSpent += Number(it?.spent || 0);
+    const div = document.createElement("div");
+    div.className = "item";
+    const when = it?.created_at ? new Date(it.created_at).toLocaleString("vi-VN") : (it?.createdAt ? new Date(it.createdAt).toLocaleString("vi-VN") : "");
+    const qtyTxt = it?.qty && it.qty > 1 ? ` x${it.qty}` : "";
+    const spent = formatPoints(it?.spent || 0);
+    const delBtn = it?.id
+      ? `<button class="mini-btn mini-btn--danger" type="button" data-action="delete-redemption" data-id="${escapeHtml(it.id)}" data-spent="${Number(it.spent||0)}">Hoàn tác</button>`
+      : "";
+    div.innerHTML = `
+      <div class="item__top">
+        <div>
+          <div class="item__title">${escapeHtml(it?.name || "Quà")}${escapeHtml(qtyTxt)}</div>
+          <div class="item__meta">${escapeHtml(when)}</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div class="item__meta">-${escapeHtml(spent)} điểm</div>
+          ${delBtn}
+        </div>
+      </div>
+    `;
+    els.redemptionList.appendChild(div);
+  }
+
+  // dòng tổng kết xinh xắn
+  const summary = document.createElement("div");
+  summary.className = "muted";
+  summary.style.marginTop = "6px";
+  summary.style.fontSize = "12px";
+  summary.textContent = `Tổng đã tặng bé nị: ${formatPoints(totalSpent)} điểm 💖`;
+  els.redemptionList.appendChild(summary);
+}
+
 function formatPoints(n) {
   try {
     return Number(n || 0).toLocaleString("vi-VN");
@@ -302,33 +462,7 @@ function renderShop() {
   }
 }
 
-function renderRedemptions() {
-  if (!els.redemptionList) return;
-  const items = getRedemptions();
-  els.redemptionList.innerHTML = "";
-  if (!items.length) {
-    els.redemptionList.innerHTML = `<div class="item"><div class="muted">Chưa đổi quà nào.</div></div>`;
-    return;
-  }
-
-  for (const it of items) {
-    const div = document.createElement("div");
-    div.className = "item";
-    const when = it?.createdAt ? new Date(it.createdAt).toLocaleString("vi-VN") : "";
-    const qtyTxt = it?.qty && it.qty > 1 ? ` x${it.qty}` : "";
-    const spent = formatPoints(it?.spent || 0);
-    div.innerHTML = `
-      <div class="item__top">
-        <div>
-          <div class="item__title">${escapeHtml(it?.name || "Quà")}${escapeHtml(qtyTxt)}</div>
-          <div class="item__meta">${escapeHtml(when)}</div>
-        </div>
-        <div class="item__meta">-${escapeHtml(spent)} điểm</div>
-      </div>
-    `;
-    els.redemptionList.appendChild(div);
-  }
-}
+// (renderRedemptions đã được thay bằng phiên bản DB ở trên)
 
 function renderCheckinShopAll() {
   renderPoints();
@@ -371,9 +505,10 @@ function checkinToday() {
   renderPoints();
   renderCheckinDay();
   setStatus(els.checkinStatus, `Đã check-in! +${formatPoints(reward)} điểm.`, "ok");
+  celebrate("heart");
 }
 
-function redeemSelected() {
+async function redeemSelected() {
   if (!els.shopList) return;
   const inputs = Array.from(els.shopList.querySelectorAll("[data-shop-qty]"));
   const picks = [];
@@ -401,25 +536,66 @@ function redeemSelected() {
   }
 
   const now = new Date().toISOString();
-  const old = getRedemptions();
-  const toAdd = [];
+  const toAddLocalShape = [];
+  const dbRecords = [];
   for (const p of picks) {
-    toAdd.push({
-      id: `${String(p.item.id)}_${crypto.randomUUID()}`,
+    const spent = p.item.cost * p.qty;
+    const rec = {
       itemId: String(p.item.id),
       name: p.item.name,
       qty: p.qty,
-      spent: p.item.cost * p.qty,
+      spent,
       createdAt: now,
+    };
+    toAddLocalShape.push(rec);
+    dbRecords.push({
+      item_id: String(p.item.id),
+      name: p.item.name,
+      qty: p.qty,
+      spent,
+      created_at: now,
     });
   }
 
   setPoints(pts - total);
-  setRedemptions([...toAdd, ...old]);
   renderPoints();
+
+  // Lưu lịch sử lên DB (ưu tiên)
+  try {
+    if (sb && dbRecords.length) {
+      await addRedemptionsToDb(dbRecords);
+      await reloadRedemptionsCache();
+    } else {
+      // fallback local (nếu không có sb)
+      const old = getRedemptions();
+      setRedemptions([...toAddLocalShape.map(r => ({
+        id: `${r.itemId}_${crypto.randomUUID()}`,
+        itemId: r.itemId,
+        name: r.name,
+        qty: r.qty,
+        spent: r.spent,
+        createdAt: r.createdAt,
+      })), ...old]);
+    }
+  } catch (e) {
+    // vẫn giữ local làm backup nếu lỗi DB
+    const old = getRedemptions();
+    setRedemptions([...toAddLocalShape.map(r => ({
+      id: `${r.itemId}_${crypto.randomUUID()}`,
+      itemId: r.itemId,
+      name: r.name,
+      qty: r.qty,
+      spent: r.spent,
+      createdAt: r.createdAt,
+    })), ...old]);
+  }
+
   renderRedemptions();
   for (const inp of inputs) inp.value = "0";
   setStatus(els.redeemStatus, `Đổi quà thành công! -${formatPoints(total)} điểm.`, "ok");
+
+  // hiệu ứng vui
+  celebrate("heart");
 }
 
 function isConfigured() {
@@ -493,7 +669,8 @@ function requestConfirmMatch(expected, { title, desc, wrongText } = {}) {
 }
 
 function confirmDelete() {
-  return requestConfirmMatch(DELETE_PASSCODE, { title: "Xác nhận xóa", desc: "Nhập mật khẩu để xóa" });
+  const expected = APP_PASSCODES.delete || DELETE_PASSCODE;
+  return requestConfirmMatch(expected, { title: "Xác nhận xóa", desc: "Nhập mật khẩu để xóa" });
 }
 
 function fmtDate(d) {
@@ -828,6 +1005,15 @@ async function refreshAll() {
     return;
   }
 
+  // Load passcode từ DB (cho unlock + xác nhận xóa/đổi)
+  await loadPasscodes();
+
+  // Load lịch sử đổi quà từ DB (có auto-migrate local cũ)
+  try {
+    await reloadRedemptionsCache();
+    renderRedemptions();
+  } catch {}
+
   try {
     await loadShopItems();
     renderShop();
@@ -930,10 +1116,14 @@ function stopRecording() {
 }
 
 function wireEvents() {
-  els.lockForm.addEventListener("submit", (e) => {
+  els.lockForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const v = (els.passcode.value || "").trim();
-    if (v === PASSCODE) {
+    // đảm bảo đã load pass từ DB (nếu chưa)
+    if (!APP_PASSCODES.unlock && sb) {
+      await loadPasscodes();
+    }
+    if (v === APP_PASSCODES.unlock) {
       setStatus(els.lockError, "");
       unlockApp();
       refreshAll();
@@ -1027,11 +1217,9 @@ function wireEvents() {
   });
 
   els.btnRedeemSelected?.addEventListener("click", () => {
-    try {
-      redeemSelected();
-    } catch {
+    redeemSelected().catch(() => {
       setStatus(els.redeemStatus, "Có lỗi xảy ra khi đổi quà.", "danger");
-    }
+    });
   });
 
   els.addProductForm?.addEventListener("submit", async (e) => {
@@ -1046,7 +1234,8 @@ function wireEvents() {
     if (!name) return setStatus(els.addProductStatus, "Nhập tên sản phẩm trước nha", "danger");
     if (!Number.isFinite(cost) || cost < 0) return setStatus(els.addProductStatus, "Giá điểm không hợp lệ", "danger");
 
-    const ok = await requestConfirmMatch(DELETE_PASSCODE, { title: "Thêm sản phẩm", desc: "Nhập mật khẩu để thêm sản phẩm" });
+    const expectedDel = APP_PASSCODES.delete || DELETE_PASSCODE;
+    const ok = await requestConfirmMatch(expectedDel, { title: "Thêm sản phẩm", desc: "Nhập mật khẩu để thêm sản phẩm" });
     if (!ok) return;
 
     try {
@@ -1130,6 +1319,37 @@ function wireEvents() {
       renderMessages(await listMessages());
     } catch (err) {
       setStatus(els.msgStatus, supaErrMsg(err), "danger");
+    }
+  });
+
+  // Xóa / hoàn tác lịch sử đổi quà (có refund điểm)
+  els.redemptionList?.addEventListener("click", async (e) => {
+    const btn = e.target?.closest?.("[data-action='delete-redemption']");
+    if (!btn) return;
+    if (!(await confirmDelete())) return; // dùng delete passcode từ DB
+    const id = btn.dataset.id;
+    const spent = Number(btn.dataset.spent || 0);
+    if (!sb) {
+      // fallback local
+      const arr = getRedemptions().filter((x) => String(x.id) !== String(id));
+      setRedemptions(arr);
+      redemptionsCache = arr;
+      setPoints(getPoints() + spent);
+      renderPoints();
+      renderRedemptions();
+      return;
+    }
+    try {
+      setStatus(els.redeemStatus, "Đang hoàn tác...", "muted");
+      await deleteRedemption(id);
+      // hoàn tiền
+      setPoints(getPoints() + Math.max(0, spent));
+      renderPoints();
+      await reloadRedemptionsCache();
+      renderRedemptions();
+      setStatus(els.redeemStatus, `Đã hoàn tác. +${formatPoints(spent)} điểm đã được trả lại.`, "ok");
+    } catch (err) {
+      setStatus(els.redeemStatus, supaErrMsg(err), "danger");
     }
   });
 
@@ -1253,7 +1473,20 @@ function boot() {
   wireEvents();
   switchTab("diary");
 
+  // Tải sớm passcode + shop + redemptions
+  if (sb) {
+    loadPasscodes();
+  }
   loadShopItems().finally(() => renderCheckinShopAll());
+
+  // Tải redemptions sớm (nếu đã unlock)
+  if (sb) {
+    reloadRedemptionsCache().then(() => {
+      if (!document.getElementById("app")?.classList.contains("hidden")) {
+        renderRedemptions();
+      }
+    });
+  }
 
   try {
     setCustomCursorFromImage("./z7574744147805_ab6b33bf96bfb0962ffc056b20edb4a9.jpg");
@@ -1308,3 +1541,48 @@ async function setCustomCursorFromImage(src) {
   const url = canvas.toDataURL("image/png");
   document.body.style.cursor = `url(${url}) 8 8, auto`;
 }
+
+/* ============================================================
+   HƯỚNG DẪN SETUP DATABASE (chạy 1 lần trong Supabase SQL Editor)
+   ============================================================
+
+1) Tạo bảng lịch sử đổi quà (love_redemptions):
+   CREATE TABLE IF NOT EXISTS love_redemptions (
+     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     item_id text,
+     name text NOT NULL,
+     qty integer DEFAULT 1,
+     spent integer NOT NULL,
+     created_at timestamptz DEFAULT now()
+   );
+
+   -- (Tùy chọn) RLS: chỉ cho phép đọc/ghi từ anon key của app này (hoặc để public nếu bạn tin tưởng link riêng tư)
+   ALTER TABLE love_redemptions ENABLE ROW LEVEL SECURITY;
+   CREATE POLICY "Allow all for this cute app" ON love_redemptions
+     FOR ALL USING (true) WITH CHECK (true);
+
+2) Thêm cột mật khẩu vào bảng settings (đang có sẵn):
+   ALTER TABLE settings
+     ADD COLUMN IF NOT EXISTS unlock_passcode text,
+     ADD COLUMN IF NOT EXISTS delete_passcode text;
+
+   -- Đặt mật khẩu của bạn (thay giá trị bên dưới):
+   INSERT INTO settings (id, love_start_date, unlock_passcode, delete_passcode)
+   VALUES (1, NULL, '25052009', '9999')
+   ON CONFLICT (id) DO UPDATE SET
+     unlock_passcode = EXCLUDED.unlock_passcode,
+     delete_passcode = EXCLUDED.delete_passcode;
+
+   -- Muốn đổi passcode sau này chỉ cần UPDATE:
+   -- UPDATE settings SET unlock_passcode = 'newpass', delete_passcode = 'newdel' WHERE id = 1;
+
+3) Sau khi chạy SQL xong → reload app là dùng được ngay.
+   - Mật khẩu giờ lấy từ DB, không còn hardcode trong source.
+   - Lịch sử đổi quà sẽ tự migrate từ localStorage lên DB lần đầu (nếu có).
+
+Lưu ý bảo mật:
+- Vì đang dùng anon key + RLS open, ai biết SUPABASE_URL + KEY đều đọc/ghi được.
+- Với dự án "làm cho ny" thì ổn (gửi link trực tiếp cho bé).
+- Muốn an toàn cao hơn sau này: bật Supabase Auth (tạo user cho bé) + policies chặt + Edge Function cho redeem.
+
+============================================================ */
