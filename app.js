@@ -1,13 +1,14 @@
 /* global supabase */
 
 /* ============================================================
-   QUAN TRỌNG: Mật khẩu giờ được lưu trên DB (settings table)
-   - Mặc định fallback vẫn giữ ở đây để an toàn khi chưa set.
-   - Sau khi set trên DB thì giá trị DB sẽ được dùng.
-   - Xem hướng dẫn SQL ở cuối file.
+   ⚠️ QUAN TRỌNG - MẬT KHẨU ĐÃ ĐƯA LÊN DATABASE
+   - Các giá trị bên dưới PHẢI để trống ("" hoặc placeholder).
+   - Giá trị thật được load từ bảng "settings" trong Supabase.
+   - Không bao giờ commit mật khẩu thật vào app.js nữa.
+   - Xem hướng dẫn SQL đầy đủ ở CUỐI FILE.
 ============================================================ */
-const PASSCODE = "25052009";
-const DELETE_PASSCODE = "9999";
+const PASSCODE = "";           // ← Để trống. Giá trị thật lấy từ database
+const DELETE_PASSCODE = "";    // ← Để trống. Giá trị thật lấy từ database
 
 // 1) Điền Supabase của bạn vào đây
 // Lưu ý: anon key là public key (được phép nằm ở frontend). Đừng dùng service_role key.
@@ -97,7 +98,7 @@ let pointsDbSaveTimer = null;
 let suppressPointsDbSave = false;
 
 let redemptionsCache = [];
-let APP_PASSCODES = { unlock: PASSCODE, delete: DELETE_PASSCODE };
+let APP_PASSCODES = { unlock: "", delete: "" };   // Sẽ được load từ database trong loadPasscodes()
 
 const LS_POINTS = "love_points";
 const LS_CHECKIN = "love_checkin";
@@ -303,19 +304,36 @@ async function syncPointsStateFromDbOnce() {
 
 /* ===================== PASS CODES (từ DB) ===================== */
 async function loadPasscodes() {
-  if (!sb) return;
+  if (!sb) {
+    // Không có Supabase → chỉ dùng nếu bạn cố tình để giá trị trong code (không khuyến khích)
+    APP_PASSCODES.unlock = "";
+    APP_PASSCODES.delete = "";
+    return;
+  }
+
   try {
     const { data } = await sb
       .from("settings")
       .select("unlock_passcode, delete_passcode")
       .eq("id", 1)
       .maybeSingle();
-    if (data) {
-      if (data.unlock_passcode) APP_PASSCODES.unlock = String(data.unlock_passcode).trim();
-      if (data.delete_passcode) APP_PASSCODES.delete = String(data.delete_passcode).trim();
+
+    // Ưu tiên giá trị từ database
+    if (data?.unlock_passcode) {
+      APP_PASSCODES.unlock = String(data.unlock_passcode).trim();
+    } else {
+      APP_PASSCODES.unlock = "";   // không có trong DB thì không cho login (bắt buộc phải set)
     }
-  } catch {
-    // giữ giá trị fallback
+
+    if (data?.delete_passcode) {
+      APP_PASSCODES.delete = String(data.delete_passcode).trim();
+    } else {
+      APP_PASSCODES.delete = "";
+    }
+  } catch (e) {
+    // Lỗi kết nối DB → không có pass để login
+    APP_PASSCODES.unlock = "";
+    APP_PASSCODES.delete = "";
   }
 }
 
@@ -669,7 +687,7 @@ function requestConfirmMatch(expected, { title, desc, wrongText } = {}) {
 }
 
 function confirmDelete() {
-  const expected = APP_PASSCODES.delete || DELETE_PASSCODE;
+  const expected = APP_PASSCODES.delete || "";
   return requestConfirmMatch(expected, { title: "Xác nhận xóa", desc: "Nhập mật khẩu để xóa" });
 }
 
@@ -1119,10 +1137,15 @@ function wireEvents() {
   els.lockForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const v = (els.passcode.value || "").trim();
-    // đảm bảo đã load pass từ DB (nếu chưa)
-    if (!APP_PASSCODES.unlock && sb) {
-      await loadPasscodes();
+
+    // Đảm bảo đã load passcode từ database
+    await loadPasscodes();
+
+    if (!APP_PASSCODES.unlock) {
+      setStatus(els.lockError, "Chưa có mật khẩu trong database. Hãy chạy SQL setup trước.", "danger");
+      return;
     }
+
     if (v === APP_PASSCODES.unlock) {
       setStatus(els.lockError, "");
       unlockApp();
@@ -1234,7 +1257,7 @@ function wireEvents() {
     if (!name) return setStatus(els.addProductStatus, "Nhập tên sản phẩm trước nha", "danger");
     if (!Number.isFinite(cost) || cost < 0) return setStatus(els.addProductStatus, "Giá điểm không hợp lệ", "danger");
 
-    const expectedDel = APP_PASSCODES.delete || DELETE_PASSCODE;
+    const expectedDel = APP_PASSCODES.delete || "";
     const ok = await requestConfirmMatch(expectedDel, { title: "Thêm sản phẩm", desc: "Nhập mật khẩu để thêm sản phẩm" });
     if (!ok) return;
 
@@ -1576,13 +1599,14 @@ async function setCustomCursorFromImage(src) {
    -- Muốn đổi passcode sau này chỉ cần UPDATE:
    -- UPDATE settings SET unlock_passcode = 'newpass', delete_passcode = 'newdel' WHERE id = 1;
 
-3) Sau khi chạy SQL xong → reload app là dùng được ngay.
-   - Mật khẩu giờ lấy từ DB, không còn hardcode trong source.
-   - Lịch sử đổi quà sẽ tự migrate từ localStorage lên DB lần đầu (nếu có).
+3) Sau khi chạy SQL xong → reload app (Ctrl + Shift + R) là dùng được ngay.
+   - Mật khẩu giờ lấy từ DB.
+   - app.js chỉ còn giá trị rỗng (không còn mật khẩu thật trong code).
 
-Lưu ý bảo mật:
-- Vì đang dùng anon key + RLS open, ai biết SUPABASE_URL + KEY đều đọc/ghi được.
-- Với dự án "làm cho ny" thì ổn (gửi link trực tiếp cho bé).
-- Muốn an toàn cao hơn sau này: bật Supabase Auth (tạo user cho bé) + policies chặt + Edge Function cho redeem.
+Lưu ý quan trọng:
+- KHÔNG bao giờ để mật khẩu thật trong file app.js (đã sửa thành "" ở trên).
+- Vì đang dùng anon key + bảng public, ai biết SUPABASE_URL + KEY đều đọc/ghi được.
+- Với dự án "làm cho ny" thì ổn (chỉ gửi link trực tiếp cho bé).
+- Muốn an toàn cao hơn sau này: bật Supabase Auth (tạo user cho bé) + policies chặt.
 
 ============================================================ */
