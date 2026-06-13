@@ -1,6 +1,6 @@
 /* global supabase */
 
-const PASSCODE = "03022026";
+const PASSCODE = "25052009";
 const DELETE_PASSCODE = "9999";
 
 // 1) Điền Supabase của bạn vào đây
