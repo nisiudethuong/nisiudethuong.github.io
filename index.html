@@ -54,10 +54,31 @@
       <section id="app" class="app hidden">
         <section class="card hero">
           <div class="hero__title">Bé nị quen anh tới giờ được</div>
-          <div class="hero__counter">
-            <div class="hero__num" id="daysCount">—</div>
-            <div class="hero__unit">ngày</div>
+
+          <div class="hero__photos-row">
+            <!-- Bên trái: Ảnh của Anh -->
+            <div class="hero__side">
+              <div class="hero__side-photo">
+                <img id="heroPhotoLeft" alt="Anh" />
+              </div>
+              <div class="hero__side-label">Anh</div>
+            </div>
+
+            <!-- Bộ đếm ngày ở giữa -->
+            <div class="hero__counter">
+              <div class="hero__num" id="daysCount">—</div>
+              <div class="hero__unit">ngày</div>
+            </div>
+
+            <!-- Bên phải: Ảnh của Em -->
+            <div class="hero__side">
+              <div class="hero__side-photo">
+                <img id="heroPhotoRight" alt="Em" />
+              </div>
+              <div class="hero__side-label">Em</div>
+            </div>
           </div>
+
           <div class="hero__sub" id="ymdCount">—</div>
         </section>
 
@@ -106,7 +127,7 @@
           <div class="card panel" data-panel="album" hidden>
             <div class="panel__header">
               <h2>Album ảnh</h2>
-              <div class="muted">Nị up ảnh lên đây nàaa</div>
+              <div class="muted">Nị up ảnh lên đây nàaa • Nhấn vào ảnh để xem to</div>
             </div>
 
             <div class="gallery" id="photoGrid"></div>
@@ -245,18 +266,31 @@
             <div class="dialog__top">
               <div>
                 <div class="dialog__title">Cài đặt</div>
-                <div class="muted">Chỉ cần đặt một lần để bộ đếm hoạt động</div>
+                <div class="muted">Ngày yêu + ảnh hai bên (Anh - Em) cho khung đếm ngày đẹp lung linh</div>
               </div>
               <button id="btnCloseSettings" class="btn btn--ghost" type="button">Đóng</button>
             </div>
 
             <div class="stack">
-              <form id="startDateForm" class="row" autocomplete="off">
-                <label class="field" style="flex:1">
+              <form id="startDateForm" class="stack" autocomplete="off">
+                <label class="field">
                   <span class="field__label">Ngày bắt đầu yêu</span>
                   <input id="loveStart" class="input" type="date" />
                 </label>
-                <button class="btn btn--primary" type="submit">Lưu</button>
+
+                <!-- Ảnh cho 2 bên khung đếm ngày -->
+                <div class="row" style="gap:12px; flex-wrap:wrap">
+                  <label class="field" style="flex:1; min-width:140px">
+                    <span class="field__label">Ảnh bên trái (Anh)</span>
+                    <input id="heroLeftPhotoFile" class="input" type="file" accept="image/*" />
+                  </label>
+                  <label class="field" style="flex:1; min-width:140px">
+                    <span class="field__label">Ảnh bên phải (Em)</span>
+                    <input id="heroRightPhotoFile" class="input" type="file" accept="image/*" />
+                  </label>
+                </div>
+
+                <button class="btn btn--primary" type="submit" style="width:100%; margin-top:4px">Lưu cài đặt</button>
               </form>
               <div id="counterStatus" class="status" aria-live="polite"></div>
             </div>
@@ -285,6 +319,18 @@
               </div>
               <div id="confirmError" class="error" aria-live="polite"></div>
             </form>
+          </div>
+        </dialog>
+
+        <!-- Photo Lightbox / Viewer - đẹp khi xem trên điện thoại -->
+        <dialog id="photoViewer" class="dialog photo-viewer">
+          <div class="viewer__backdrop" data-close-viewer></div>
+          <div class="viewer__content">
+            <button class="viewer__close" type="button" data-close-viewer>✕</button>
+            <div class="viewer__image-wrap">
+              <img id="viewerImg" alt="Ảnh lớn" />
+            </div>
+            <div class="viewer__caption" id="viewerCaption"></div>
           </div>
         </dialog>
       </section>

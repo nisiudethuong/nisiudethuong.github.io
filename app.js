@@ -38,6 +38,12 @@ const els = {
   loveStart: document.getElementById("loveStart"),
   counterStatus: document.getElementById("counterStatus"),
 
+  // Side photos in hero (settable from settings)
+  heroPhotoLeft: document.getElementById("heroPhotoLeft"),
+  heroPhotoRight: document.getElementById("heroPhotoRight"),
+  heroLeftPhotoFile: document.getElementById("heroLeftPhotoFile"),
+  heroRightPhotoFile: document.getElementById("heroRightPhotoFile"),
+
   diaryForm: document.getElementById("diaryForm"),
   diaryDate: document.getElementById("diaryDate"),
   diaryTitle: document.getElementById("diaryTitle"),
@@ -50,6 +56,11 @@ const els = {
   photoCaption: document.getElementById("photoCaption"),
   photoGrid: document.getElementById("photoGrid"),
   photoStatus: document.getElementById("photoStatus"),
+
+  // Lightbox viewer
+  photoViewer: document.getElementById("photoViewer"),
+  viewerImg: document.getElementById("viewerImg"),
+  viewerCaption: document.getElementById("viewerCaption"),
 
   msgTextForm: document.getElementById("msgTextForm"),
   msgText: document.getElementById("msgText"),
@@ -776,20 +787,27 @@ function closeSettings() {
   }
 }
 
-async function upsertLoveStartDate(dateStr) {
+async function upsertHeroSettings(payload) {
   if (!sb) throw new Error("Chưa cấu hình Supabase");
   // Singleton row: id = 1
   const { error } = await sb
     .from("settings")
-    .upsert({ id: 1, love_start_date: dateStr }, { onConflict: "id" });
+    .upsert({ id: 1, ...payload }, { onConflict: "id" });
   if (error) throw error;
 }
 
-async function fetchLoveStartDate() {
-  if (!sb) return null;
-  const { data, error } = await sb.from("settings").select("love_start_date").eq("id", 1).maybeSingle();
+async function fetchHeroSettings() {
+  if (!sb) return { love_start_date: null, left_photo_url: null, right_photo_url: null };
+  const { data, error } = await sb.from("settings")
+    .select("love_start_date, left_photo_url, right_photo_url")
+    .eq("id", 1)
+    .maybeSingle();
   if (error) throw error;
-  return data?.love_start_date ?? null;
+  return {
+    love_start_date: data?.love_start_date ?? null,
+    left_photo_url: data?.left_photo_url ?? null,
+    right_photo_url: data?.right_photo_url ?? null,
+  };
 }
 
 function renderCounter(startDateStr) {
@@ -805,6 +823,15 @@ function renderCounter(startDateStr) {
 
   els.daysCount.textContent = String(Math.max(0, days));
   els.ymdCount.textContent = `${ymd.y} năm · ${ymd.m} tháng · ${ymd.d} ngày`;
+}
+
+function renderHeroPhotos(leftUrl, rightUrl) {
+  if (els.heroPhotoLeft) {
+    els.heroPhotoLeft.src = leftUrl || "";
+  }
+  if (els.heroPhotoRight) {
+    els.heroPhotoRight.src = rightUrl || "";
+  }
 }
 
 async function addDiaryEntry(payload) {
@@ -891,15 +918,45 @@ function renderPhotos(items) {
   for (const it of items) {
     const div = document.createElement("div");
     div.className = "photo";
+    // Lưu data để lightbox dùng
+    div.dataset.url = it.public_url || "";
+    div.dataset.caption = it.caption || "";
+
+    const captionHtml = it.caption 
+      ? `<div class="cap">${escapeHtml(it.caption)}</div>` 
+      : '';
+
     div.innerHTML = `
       <div class="photo__top">
         <button class="mini-btn mini-btn--danger" type="button" data-action="delete-photo" data-id="${it.id}" data-path="${escapeHtml(it.file_path || "")}">Xóa</button>
       </div>
       <img src="${it.public_url}" alt="photo" loading="lazy" />
-      <div class="cap">${escapeHtml(it.caption || "")}</div>
+      ${captionHtml}
     `;
     els.photoGrid.appendChild(div);
   }
+}
+
+/* ========== Lightbox xem ảnh đẹp trên mobile ========== */
+function openPhotoViewer(url, caption) {
+  if (!els.photoViewer || !els.viewerImg) return;
+  els.viewerImg.src = url || "";
+  els.viewerCaption.textContent = caption || "";
+  if (typeof els.photoViewer.showModal === "function") {
+    els.photoViewer.showModal();
+  } else {
+    els.photoViewer.setAttribute("open", "open");
+  }
+}
+
+function closePhotoViewer() {
+  if (!els.photoViewer) return;
+  if (typeof els.photoViewer.close === "function") {
+    els.photoViewer.close();
+  } else {
+    els.photoViewer.removeAttribute("open");
+  }
+  if (els.viewerImg) els.viewerImg.src = "";
 }
 
 async function deletePhotoItem(id) {
@@ -1020,6 +1077,7 @@ async function refreshAll() {
     setStatus(els.photoStatus, "Chưa cấu hình Supabase", "danger");
     setStatus(els.msgStatus, "Chưa cấu hình Supabase", "danger");
     renderCounter(null);
+    renderHeroPhotos(null, null);
     return;
   }
 
@@ -1056,9 +1114,10 @@ async function refreshAll() {
 
   try {
     setStatus(els.counterStatus, "Đang tải...", "muted");
-    const startDate = await fetchLoveStartDate();
-    els.loveStart.value = startDate || "";
-    renderCounter(startDate);
+    const heroSettings = await fetchHeroSettings();
+    els.loveStart.value = heroSettings.love_start_date || "";
+    renderCounter(heroSettings.love_start_date);
+    renderHeroPhotos(heroSettings.left_photo_url, heroSettings.right_photo_url);
     setStatus(els.counterStatus, "OK", "ok");
   } catch (e) {
     setStatus(els.counterStatus, supaErrMsg(e), "danger");
@@ -1298,22 +1357,50 @@ function wireEvents() {
     }
   });
 
+  // Xử lý click trong album ảnh: Xóa hoặc mở lightbox xem to
   els.photoGrid?.addEventListener("click", async (e) => {
+    // 1. Nếu bấm nút Xóa thì xử lý xóa như cũ
     const btn = e.target?.closest?.("[data-action='delete-photo']");
-    if (!btn) return;
-    if (!(await confirmDelete())) return;
-    if (!sb) return setStatus(els.photoStatus, "Chưa cấu hình Supabase", "danger");
-    const id = btn.dataset.id;
-    const path = btn.dataset.path;
-    try {
-      setStatus(els.photoStatus, "Đang xóa...", "muted");
-      // xóa file trước rồi xóa row
-      await deleteFromBucket(PHOTOS_BUCKET, path);
-      await deletePhotoItem(id);
-      setStatus(els.photoStatus, "Đã xóa ảnh!", "ok");
-      renderPhotos(await listPhotos());
-    } catch (err) {
-      setStatus(els.photoStatus, supaErrMsg(err), "danger");
+    if (btn) {
+      if (!(await confirmDelete())) return;
+      if (!sb) return setStatus(els.photoStatus, "Chưa cấu hình Supabase", "danger");
+      const id = btn.dataset.id;
+      const path = btn.dataset.path;
+      try {
+        setStatus(els.photoStatus, "Đang xóa...", "muted");
+        await deleteFromBucket(PHOTOS_BUCKET, path);
+        await deletePhotoItem(id);
+        setStatus(els.photoStatus, "Đã xóa ảnh!", "ok");
+        renderPhotos(await listPhotos());
+      } catch (err) {
+        setStatus(els.photoStatus, supaErrMsg(err), "danger");
+      }
+      return;
+    }
+
+    // 2. Bấm vào ảnh (không phải nút xóa) → mở lightbox đẹp
+    const photoCard = e.target?.closest?.(".photo");
+    if (photoCard && els.photoViewer) {
+      const url = photoCard.dataset.url;
+      const caption = photoCard.dataset.caption || "";
+      if (url) {
+        openPhotoViewer(url, caption);
+      }
+    }
+  });
+
+  // Đóng lightbox khi bấm nút close hoặc nền đen
+  els.photoViewer?.addEventListener("click", (e) => {
+    const target = e.target;
+    if (target?.hasAttribute("data-close-viewer") || target?.closest?.("[data-close-viewer]")) {
+      closePhotoViewer();
+    }
+  });
+
+  // Hỗ trợ phím Escape đóng viewer
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && els.photoViewer?.open) {
+      closePhotoViewer();
     }
   });
 
@@ -1380,19 +1467,152 @@ function wireEvents() {
     e.preventDefault();
     if (!sb) return setStatus(els.counterStatus, "Chưa cấu hình Supabase", "danger");
 
-    const val = els.loveStart.value;
-    if (!val) return setStatus(els.counterStatus, "Chọn ngày trước nha", "danger");
+    const dateVal = els.loveStart.value;
+    if (!dateVal) return setStatus(els.counterStatus, "Chọn ngày trước nha", "danger");
+
+    const leftFile = els.heroLeftPhotoFile?.files?.[0] || null;
+    const rightFile = els.heroRightPhotoFile?.files?.[0] || null;
 
     try {
       setStatus(els.counterStatus, "Đang lưu...", "muted");
-      await upsertLoveStartDate(val);
-      renderCounter(val);
-      setStatus(els.counterStatus, "Đã lưu!", "ok");
+
+      const payload = { love_start_date: dateVal };
+
+      // Upload ảnh nếu có file mới
+      if (leftFile) {
+        const up = await uploadToBucket(PHOTOS_BUCKET, leftFile);
+        payload.left_photo_url = up.publicUrl;
+      }
+      if (rightFile) {
+        const up = await uploadToBucket(PHOTOS_BUCKET, rightFile);
+        payload.right_photo_url = up.publicUrl;
+      }
+
+      await upsertHeroSettings(payload);
+
+      // Cập nhật UI ngay
+      renderCounter(dateVal);
+      if (payload.left_photo_url || payload.right_photo_url) {
+        const fresh = await fetchHeroSettings();
+        renderHeroPhotos(fresh.left_photo_url, fresh.right_photo_url);
+      }
+
+      // Reset file inputs sau khi lưu
+      if (els.heroLeftPhotoFile) els.heroLeftPhotoFile.value = "";
+      if (els.heroRightPhotoFile) els.heroRightPhotoFile.value = "";
+
+      setStatus(els.counterStatus, "Đã lưu! Khung đếm ngày đẹp hơn rồi nè 💕", "ok");
     } catch (e2) {
       setStatus(els.counterStatus, supaErrMsg(e2), "danger");
     }
   });
 
+/* ============================================================
+   RLS POLICIES CHẶT CHO CÁC BẢNG HIỆN TẠI (copy chạy trong Supabase SQL Editor)
+   ============================================================
+
+Lưu ý quan trọng trước khi chạy:
+- Bạn đang dùng custom login (bảng app_users + RPC) + anon key public trong JS.
+- Bảo mật thực sự đến từ 3 lớp:
+
+1. **RLS chặt** (bên dưới) - chặn query trực tiếp.
+2. **Frontend gate** - chỉ unlock UI sau khi login() thành công.
+3. **Khuyến nghị mạnh**: Đặt Cloudflare Zero Trust (miễn phí) chặn truy cập web. Chỉ cho 2 email của 2 đứa vào được. Khi đó dù anon key lộ, người ngoài cũng không load được trang để F12.
+
+Dưới đây là policy "chặt" hợp lý cho setup hiện tại (custom login, không dùng Supabase Auth).
+
+Chạy nguyên đoạn dưới đây (nó sẽ drop policy cũ nếu có và tạo lại).
+
+-- 1. Bật RLS cho tất cả bảng
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE diary_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE media_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE love_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE love_shop_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE love_points_state ENABLE ROW LEVEL SECURITY;
+ALTER TABLE love_redemptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE app_users ENABLE ROW LEVEL SECURITY;
+
+-- 2. app_users: CHẶT NHẤT (bảo vệ password hash)
+DROP POLICY IF EXISTS "No direct select" ON app_users;
+DROP POLICY IF EXISTS "Block all direct access to app_users" ON app_users;
+
+CREATE POLICY "Block all direct access to app_users" ON app_users
+  FOR ALL
+  USING (false)
+  WITH CHECK (false);
+
+-- Chỉ function login() mới được phép đọc hash (vì nó là SECURITY DEFINER)
+
+-- 3. settings (ngày yêu + ảnh 2 bên)
+DROP POLICY IF EXISTS "Allow anon full on settings" ON settings;
+CREATE POLICY "Allow anon full on settings" ON settings
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 4. diary_entries: cho phép mọi thứ (thêm/sửa/xóa/xem)
+DROP POLICY IF EXISTS "Allow anon full on diary" ON diary_entries;
+CREATE POLICY "Allow anon full on diary" ON diary_entries
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 5. media_items (ảnh)
+DROP POLICY IF EXISTS "Allow anon full on media" ON media_items;
+CREATE POLICY "Allow anon full on media" ON media_items
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 6. love_messages
+DROP POLICY IF EXISTS "Allow anon full on messages" ON love_messages;
+CREATE POLICY "Allow anon full on messages" ON love_messages
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 7. love_shop_items
+DROP POLICY IF EXISTS "Allow anon full on shop_items" ON love_shop_items;
+CREATE POLICY "Allow anon full on shop_items" ON love_shop_items
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 8. love_points_state
+DROP POLICY IF EXISTS "Allow anon full on points_state" ON love_points_state;
+CREATE POLICY "Allow anon full on points_state" ON love_points_state
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 9. love_redemptions
+DROP POLICY IF EXISTS "Allow anon full on redemptions" ON love_redemptions;
+CREATE POLICY "Allow anon full on redemptions" ON love_redemptions
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);
+
+-- 10. Storage buckets (photos + voices)
+DROP POLICY IF EXISTS "Allow anon full on photos" ON storage.objects;
+CREATE POLICY "Allow anon full on photos" ON storage.objects
+  FOR ALL
+  USING (bucket_id = 'photos')
+  WITH CHECK (bucket_id = 'photos');
+
+DROP POLICY IF EXISTS "Allow anon full on voices" ON storage.objects;
+CREATE POLICY "Allow anon full on voices" ON storage.objects
+  FOR ALL
+  USING (bucket_id = 'voices')
+  WITH CHECK (bucket_id = 'voices');
+
+-- Xong. Reload app và test.
+
+Lưu ý: Với policy "Allow anon full", bất kỳ ai biết SUPABASE_URL + ANON_KEY đều có thể đọc/ghi data.
+→ Đây là lý do bạn **nên** dùng Cloudflare Zero Trust chặn frontend.
+Nếu muốn bảo mật cao hơn nhiều, hãy chuyển sang Supabase Auth thật (tôi có thể giúp chuyển nếu bạn muốn).
+
+============================================================ */
   els.diaryForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (!sb) return setStatus(els.diaryStatus, "Chưa cấu hình Supabase", "danger");

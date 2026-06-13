@@ -169,6 +169,77 @@ body{
   margin: 14px auto 14px;
   background: linear-gradient(90deg, transparent, rgba(35,12,24,.14), transparent);
 }
+
+/* ===== Hero photos on sides (Anh - counter - Em) ===== */
+.hero__photos-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 14px 0 6px;
+}
+
+.hero__side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.hero__side-photo {
+  width: 68px;
+  height: 68px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 3px solid #fff;
+  box-shadow: 0 4px 14px rgba(255,45,134,.2);
+  background: #f8f1f4;
+  flex-shrink: 0;
+  position: relative;
+}
+
+/* Placeholder tim dễ thương khi chưa set ảnh */
+.hero__side-photo::before {
+  content: "❤";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #ff7ab6;
+  opacity: .28;
+  pointer-events: none;
+}
+
+.hero__side-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.hero__side-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(35,12,24,.65);
+  letter-spacing: 0.3px;
+}
+
+/* Mobile nhỏ hơn một chút cho vừa */
+@media (max-width: 380px) {
+  .hero__side-photo {
+    width: 56px;
+    height: 56px;
+  }
+  .hero__photos-row {
+    gap: 10px;
+  }
+  .hero__num {
+    font-size: 92px;
+  }
+}
 .tab{
   border: 1px solid transparent;
   background: transparent;
@@ -240,27 +311,180 @@ body{
 }
 .item__content{margin-top:10px; color:var(--text); white-space:pre-wrap; padding-left: 6px}
 
+/* ========== ALBUM GALLERY - Mobile first, đẹp & thú vị hơn ========== */
 .gallery{
-  display:grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 10px;
-  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);   /* 2 cột đẹp và dễ dùng nhất trên điện thoại */
+  gap: 14px;
+  margin-top: 16px;
+  padding-bottom: 8px;
 }
+
+/* Trên màn hình rộng hơn (tablet, desktop) mới tăng cột */
+@media (min-width: 640px){
+  .gallery{
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+}
+
 .photo{
-  border-radius: 14px;
-  overflow:hidden;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(0,0,0,.18);
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;                    /* Khung polaroid trắng */
+  box-shadow: 0 8px 25px rgba(255,45,134,.12), 0 2px 6px rgba(0,0,0,.06);
+  border: 7px solid #fff;              /* Viền trắng dày như ảnh thật */
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;              /* Để ảnh + caption xếp theo chiều dọc tự nhiên */
 }
+
+.photo:active {
+  transform: scale(0.97);
+}
+
+/* Tạo cảm giác rải rác, tự nhiên, không cứng nhắc */
+.photo:nth-child(3n+1) { transform: rotate(-1.3deg); }
+.photo:nth-child(4n+2) { transform: rotate(1.1deg); }
+.photo:nth-child(5n+3) { transform: rotate(-0.7deg); }
+
+.photo:hover {
+  box-shadow: 0 12px 34px rgba(255,45,134,.18), 0 4px 10px rgba(0,0,0,.08);
+  z-index: 1;
+}
+
+/* Ảnh hiển thị ĐẦY ĐỦ, không crop - nhìn tự nhiên hơn */
+.photo img{
+  width: 100%;
+  height: auto;
+  max-height: 320px;                   /* Giới hạn hợp lý trên mobile, tránh ảnh quá cao phá bố cục */
+  display: block;
+  object-fit: contain;                 /* Hiện NGUYÊN TẤM ảnh, không cắt xén gì cả */
+  background: #f8f1f4;
+  border-radius: 6px;
+  margin: 2px;                         /* Tạo khoảng thở nhỏ bên trong khung trắng polaroid */
+}
+
+/* Chú thích nằm dưới ảnh (kiểu polaroid thật, có khoảng ghi chú) */
+.photo .cap{
+  padding: 9px 10px 10px;
+  color: #5c2a3a;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: center;
+  background: #fff;
+  border-top: 1px solid #f3e6ed;
+  pointer-events: none;
+}
+
+/* Ẩn phần chú thích nếu không có nội dung */
+.photo .cap:empty {
+  display: none;
+}
+
+/* Nút xóa */
 .photo__top{
-  position:absolute;
-  z-index:2;
-  top:8px;
-  right:8px;
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  right: 8px;
+  opacity: 0.95;
 }
-.photo{position:relative}
-.photo img{width:100%; height:160px; object-fit:cover; display:block}
-.photo .cap{padding: 8px 10px; color: var(--muted); font-size:12px}
+
+.photo__top .mini-btn {
+  font-size: 10px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.2);
+  background: rgba(255,255,255,.9);
+}
+
+/* ========== PHOTO LIGHTBOX (Full screen viewer) ========== */
+.photo-viewer {
+  border: none;
+  background: transparent;
+  padding: 0;
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
+}
+
+.photo-viewer::backdrop {
+  background: rgba(0, 0, 0, 0.88);
+  backdrop-filter: blur(8px);
+}
+
+.viewer__backdrop {
+  position: fixed;
+  inset: 0;
+}
+
+.viewer__content {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.viewer__close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 10;
+  background: rgba(255,255,255,.15);
+  color: #fff;
+  border: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+}
+
+.viewer__image-wrap {
+  max-width: min(100%, 820px);
+  max-height: calc(100vh - 140px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+}
+
+.viewer__image-wrap img {
+  max-width: 100%;
+  max-height: calc(100vh - 140px);
+  object-fit: contain;
+  display: block;
+  border-radius: 12px;
+  background: #111;
+}
+
+.viewer__caption {
+  margin-top: 18px;
+  max-width: 620px;
+  color: #f5e6ed;
+  font-size: 15px;
+  text-align: center;
+  line-height: 1.4;
+  padding: 0 20px;
+  text-shadow: 0 1px 3px rgba(0,0,0,.6);
+}
 
 .audio{max-width: 320px; width:100%}
 
