@@ -52,6 +52,19 @@
       </section>
 
       <section id="app" class="app hidden">
+        <!-- 
+          Nội dung bên trong được tạo động từ <template id="appContentTemplate"> sau khi nhập đúng mật khẩu.
+          Mục đích: giảm thiểu lượng dữ liệu/cấu trúc private lộ ra khi người dùng bấm "Xem nguồn trang" (Ctrl+U) ở trạng thái bị khóa.
+          Dữ liệu thật (nhật ký, ảnh, tin nhắn) vẫn chỉ được tải từ Supabase SAU khi unlock thành công.
+        -->
+      </section>
+
+      <!-- 
+        Template này chứa toàn bộ UI private. 
+        Chỉ được clone vào DOM sau khi mật khẩu đúng.
+        Nhờ vậy View Source trên trang khóa sẽ không thấy form nhập nhật ký, album, tin nhắn, shop...
+      -->
+      <template id="appContentTemplate">
         <section class="card hero">
           <div class="hero__title">Bé nị quen anh tới giờ được</div>
 
@@ -333,7 +346,7 @@
             <div class="viewer__caption" id="viewerCaption"></div>
           </div>
         </dialog>
-      </section>
+      </template>
 
       <footer class="footer muted">
         Made with love.

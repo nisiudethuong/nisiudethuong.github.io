@@ -2,10 +2,11 @@
 
 /* ============================================================
    ⚠️ QUAN TRỌNG - MẬT KHẨU ĐÃ ĐƯA LÊN DATABASE
-   - Các giá trị bên dưới PHẢI để trống ("" hoặc placeholder).
-   - Giá trị thật được load từ bảng "settings" trong Supabase.
+   - Các giá trị bên dưới PHẢI để trống.
+   - Giá trị thật được load từ bảng "settings" trong Supabase (qua loadPasscodes).
    - Không bao giờ commit mật khẩu thật vào app.js nữa.
-   - Xem hướng dẫn SQL đầy đủ ở CUỐI FILE.
+   - LƯU Ý BẢO MẬT: Hiện tại ai có SUPABASE_URL + ANON_KEY đều có thể query thẳng data.
+     Xem phần SQL ở cuối file + khuyến nghị Cloudflare Zero Trust.
 ============================================================ */
 const PASSCODE = "";           // ← Để trống. Giá trị thật lấy từ database
 const DELETE_PASSCODE = "";    // ← Để trống. Giá trị thật lấy từ database
@@ -18,86 +19,180 @@ const SUPABASE_ANON_KEY = "sb_publishable_MqiMwWhN7DOnn-gFQAbWcg_sVKh9liw";
 const PHOTOS_BUCKET = "photos";
 const VOICES_BUCKET = "voices";
 
-const els = {
+// Các phần tử luôn tồn tại ngay từ đầu (lock screen + container)
+let els = {
+  // Always-present (lock + shell)
   lock: document.getElementById("lock"),
   app: document.getElementById("app"),
   lockForm: document.getElementById("lockForm"),
   passcode: document.getElementById("passcode"),
   lockError: document.getElementById("lockError"),
   btnLock: document.getElementById("btnLock"),
-  btnSettings: document.getElementById("btnSettings"),
-  settingsDialog: document.getElementById("settingsDialog"),
-  btnCloseSettings: document.getElementById("btnCloseSettings"),
 
-  tabs: Array.from(document.querySelectorAll(".tab")),
-  panels: Array.from(document.querySelectorAll("[data-panel]")),
+  // Private UI elements (sẽ được gán lại sau khi mount từ template)
+  btnSettings: null,
+  settingsDialog: null,
+  btnCloseSettings: null,
 
-  daysCount: document.getElementById("daysCount"),
-  ymdCount: document.getElementById("ymdCount"),
-  startDateForm: document.getElementById("startDateForm"),
-  loveStart: document.getElementById("loveStart"),
-  counterStatus: document.getElementById("counterStatus"),
+  tabs: [],
+  panels: [],
 
-  // Side photos in hero (settable from settings)
-  heroPhotoLeft: document.getElementById("heroPhotoLeft"),
-  heroPhotoRight: document.getElementById("heroPhotoRight"),
-  heroLeftPhotoFile: document.getElementById("heroLeftPhotoFile"),
-  heroRightPhotoFile: document.getElementById("heroRightPhotoFile"),
+  daysCount: null,
+  ymdCount: null,
+  startDateForm: null,
+  loveStart: null,
+  counterStatus: null,
 
-  diaryForm: document.getElementById("diaryForm"),
-  diaryDate: document.getElementById("diaryDate"),
-  diaryTitle: document.getElementById("diaryTitle"),
-  diaryContent: document.getElementById("diaryContent"),
-  diaryList: document.getElementById("diaryList"),
-  diaryStatus: document.getElementById("diaryStatus"),
+  heroPhotoLeft: null,
+  heroPhotoRight: null,
+  heroLeftPhotoFile: null,
+  heroRightPhotoFile: null,
 
-  photoForm: document.getElementById("photoForm"),
-  photoFile: document.getElementById("photoFile"),
-  photoCaption: document.getElementById("photoCaption"),
-  photoGrid: document.getElementById("photoGrid"),
-  photoStatus: document.getElementById("photoStatus"),
+  diaryForm: null,
+  diaryDate: null,
+  diaryTitle: null,
+  diaryContent: null,
+  diaryList: null,
+  diaryStatus: null,
 
-  // Lightbox viewer
-  photoViewer: document.getElementById("photoViewer"),
-  viewerImg: document.getElementById("viewerImg"),
-  viewerCaption: document.getElementById("viewerCaption"),
+  photoForm: null,
+  photoFile: null,
+  photoCaption: null,
+  photoGrid: null,
+  photoStatus: null,
 
-  msgTextForm: document.getElementById("msgTextForm"),
-  msgText: document.getElementById("msgText"),
-  msgImageFile: document.getElementById("msgImageFile"),
-  btnPickImage: document.getElementById("btnPickImage"),
-  btnRecord: document.getElementById("btnRecord"),
-  btnStop: document.getElementById("btnStop"),
-  btnSendVoice: document.getElementById("btnSendVoice"),
-  previewAudio: document.getElementById("previewAudio"),
-  msgList: document.getElementById("msgList"),
-  msgStatus: document.getElementById("msgStatus"),
+  photoViewer: null,
+  viewerImg: null,
+  viewerCaption: null,
 
-  pointsValue: document.getElementById("pointsValue"),
-  checkinDay: document.getElementById("checkinDay"),
-  btnCheckin: document.getElementById("btnCheckin"),
-  checkinStatus: document.getElementById("checkinStatus"),
-  shopList: document.getElementById("shopList"),
-  btnRedeemSelected: document.getElementById("btnRedeemSelected"),
-  redeemStatus: document.getElementById("redeemStatus"),
-  redemptionList: document.getElementById("redemptionList"),
+  msgTextForm: null,
+  msgText: null,
+  msgImageFile: null,
+  btnPickImage: null,
+  btnRecord: null,
+  btnStop: null,
+  btnSendVoice: null,
+  previewAudio: null,
+  msgList: null,
+  msgStatus: null,
 
-  addProductForm: document.getElementById("addProductForm"),
-  prodName: document.getElementById("prodName"),
-  prodCost: document.getElementById("prodCost"),
-  prodIcon: document.getElementById("prodIcon"),
-  prodImage: document.getElementById("prodImage"),
-  addProductStatus: document.getElementById("addProductStatus"),
+  pointsValue: null,
+  checkinDay: null,
+  btnCheckin: null,
+  checkinStatus: null,
+  shopList: null,
+  btnRedeemSelected: null,
+  redeemStatus: null,
+  redemptionList: null,
 
-  confirmDialog: document.getElementById("confirmDialog"),
-  confirmTitle: document.getElementById("confirmTitle"),
-  confirmDesc: document.getElementById("confirmDesc"),
-  confirmForm: document.getElementById("confirmForm"),
-  confirmPass: document.getElementById("confirmPass"),
-  confirmError: document.getElementById("confirmError"),
-  btnCloseConfirm: document.getElementById("btnCloseConfirm"),
-  btnConfirmCancel: document.getElementById("btnConfirmCancel"),
+  addProductForm: null,
+  prodName: null,
+  prodCost: null,
+  prodIcon: null,
+  prodImage: null,
+  addProductStatus: null,
+
+  confirmDialog: null,
+  confirmTitle: null,
+  confirmDesc: null,
+  confirmForm: null,
+  confirmPass: null,
+  confirmError: null,
+  btnCloseConfirm: null,
+  btnConfirmCancel: null,
 };
+
+// Gọi lại sau khi clone nội dung từ <template> vào #app
+function recollectPrivateEls() {
+  if (!els.app) return;
+
+  // Re-query tất cả element bên trong private UI
+  els.btnSettings = document.getElementById("btnSettings");
+  els.settingsDialog = document.getElementById("settingsDialog");
+  els.btnCloseSettings = document.getElementById("btnCloseSettings");
+
+  els.tabs = Array.from(document.querySelectorAll(".tab"));
+  els.panels = Array.from(document.querySelectorAll("[data-panel]"));
+
+  els.daysCount = document.getElementById("daysCount");
+  els.ymdCount = document.getElementById("ymdCount");
+  els.startDateForm = document.getElementById("startDateForm");
+  els.loveStart = document.getElementById("loveStart");
+  els.counterStatus = document.getElementById("counterStatus");
+
+  els.heroPhotoLeft = document.getElementById("heroPhotoLeft");
+  els.heroPhotoRight = document.getElementById("heroPhotoRight");
+  els.heroLeftPhotoFile = document.getElementById("heroLeftPhotoFile");
+  els.heroRightPhotoFile = document.getElementById("heroRightPhotoFile");
+
+  els.diaryForm = document.getElementById("diaryForm");
+  els.diaryDate = document.getElementById("diaryDate");
+  els.diaryTitle = document.getElementById("diaryTitle");
+  els.diaryContent = document.getElementById("diaryContent");
+  els.diaryList = document.getElementById("diaryList");
+  els.diaryStatus = document.getElementById("diaryStatus");
+
+  els.photoForm = document.getElementById("photoForm");
+  els.photoFile = document.getElementById("photoFile");
+  els.photoCaption = document.getElementById("photoCaption");
+  els.photoGrid = document.getElementById("photoGrid");
+  els.photoStatus = document.getElementById("photoStatus");
+
+  els.photoViewer = document.getElementById("photoViewer");
+  els.viewerImg = document.getElementById("viewerImg");
+  els.viewerCaption = document.getElementById("viewerCaption");
+
+  els.msgTextForm = document.getElementById("msgTextForm");
+  els.msgText = document.getElementById("msgText");
+  els.msgImageFile = document.getElementById("msgImageFile");
+  els.btnPickImage = document.getElementById("btnPickImage");
+  els.btnRecord = document.getElementById("btnRecord");
+  els.btnStop = document.getElementById("btnStop");
+  els.btnSendVoice = document.getElementById("btnSendVoice");
+  els.previewAudio = document.getElementById("previewAudio");
+  els.msgList = document.getElementById("msgList");
+  els.msgStatus = document.getElementById("msgStatus");
+
+  els.pointsValue = document.getElementById("pointsValue");
+  els.checkinDay = document.getElementById("checkinDay");
+  els.btnCheckin = document.getElementById("btnCheckin");
+  els.checkinStatus = document.getElementById("checkinStatus");
+  els.shopList = document.getElementById("shopList");
+  els.btnRedeemSelected = document.getElementById("btnRedeemSelected");
+  els.redeemStatus = document.getElementById("redeemStatus");
+  els.redemptionList = document.getElementById("redemptionList");
+
+  els.addProductForm = document.getElementById("addProductForm");
+  els.prodName = document.getElementById("prodName");
+  els.prodCost = document.getElementById("prodCost");
+  els.prodIcon = document.getElementById("prodIcon");
+  els.prodImage = document.getElementById("prodImage");
+  els.addProductStatus = document.getElementById("addProductStatus");
+
+  els.confirmDialog = document.getElementById("confirmDialog");
+  els.confirmTitle = document.getElementById("confirmTitle");
+  els.confirmDesc = document.getElementById("confirmDesc");
+  els.confirmForm = document.getElementById("confirmForm");
+  els.confirmPass = document.getElementById("confirmPass");
+  els.confirmError = document.getElementById("confirmError");
+  els.btnCloseConfirm = document.getElementById("btnCloseConfirm");
+  els.btnConfirmCancel = document.getElementById("btnConfirmCancel");
+}
+
+function mountPrivateUI() {
+  if (!els.app) return;
+  // Nếu đã có nội dung bên trong (đã mount) thì bỏ qua
+  if (els.app.querySelector(".hero, .tabs, .grid, dialog")) return;
+
+  const tpl = document.getElementById("appContentTemplate");
+  if (!tpl) {
+    // Fallback: không có template thì không làm gì (tránh lỗi)
+    console.warn("Không tìm thấy #appContentTemplate");
+    return;
+  }
+  const clone = tpl.content.cloneNode(true);
+  els.app.appendChild(clone);
+}
 
 let sb = null;
 let recorder = null;
@@ -745,7 +840,11 @@ function ymdBetween(start, end) {
 
 function lockApp() {
   localStorage.removeItem("love_unlocked");
-  els.app.classList.add("hidden");
+  // Dọn nội dung private ra khỏi DOM để giảm leak khi xem source / inspect
+  if (els.app) {
+    els.app.innerHTML = "";
+    els.app.classList.add("hidden");
+  }
   els.lock.classList.remove("hidden");
   els.passcode.value = "";
   setStatus(els.lockError, "");
@@ -753,14 +852,26 @@ function lockApp() {
 
 function unlockApp() {
   localStorage.setItem("love_unlocked", "1");
+
+  // Mount nội dung private từ template (lần đầu)
+  mountPrivateUI();
+  recollectPrivateEls();
+
   els.lock.classList.add("hidden");
   els.app.classList.remove("hidden");
 }
 
 function ensureUnlockedUI() {
   const ok = localStorage.getItem("love_unlocked") === "1";
-  if (ok) unlockApp();
-  else lockApp();
+  if (ok) {
+    // Nếu đã unlock từ lần trước (localStorage), mount luôn
+    mountPrivateUI();
+    recollectPrivateEls();
+    els.lock.classList.add("hidden");
+    els.app.classList.remove("hidden");
+  } else {
+    lockApp();
+  }
 }
 
 function switchTab(name) {
@@ -1208,6 +1319,8 @@ function wireEvents() {
     if (v === APP_PASSCODES.unlock) {
       setStatus(els.lockError, "");
       unlockApp();
+      // Sau khi mount UI private từ template, cần wire lại listener
+      wireEvents();
       refreshAll();
     } else {
       setStatus(els.lockError, "Sai mật khẩu rồi bé ơi.", "danger");
@@ -1463,49 +1576,51 @@ function wireEvents() {
     }
   });
 
-  els.startDateForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!sb) return setStatus(els.counterStatus, "Chưa cấu hình Supabase", "danger");
+  if (els.startDateForm) {
+    els.startDateForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!sb) return setStatus(els.counterStatus, "Chưa cấu hình Supabase", "danger");
 
-    const dateVal = els.loveStart.value;
-    if (!dateVal) return setStatus(els.counterStatus, "Chọn ngày trước nha", "danger");
+      const dateVal = els.loveStart.value;
+      if (!dateVal) return setStatus(els.counterStatus, "Chọn ngày trước nha", "danger");
 
-    const leftFile = els.heroLeftPhotoFile?.files?.[0] || null;
-    const rightFile = els.heroRightPhotoFile?.files?.[0] || null;
+      const leftFile = els.heroLeftPhotoFile?.files?.[0] || null;
+      const rightFile = els.heroRightPhotoFile?.files?.[0] || null;
 
-    try {
-      setStatus(els.counterStatus, "Đang lưu...", "muted");
+      try {
+        setStatus(els.counterStatus, "Đang lưu...", "muted");
 
-      const payload = { love_start_date: dateVal };
+        const payload = { love_start_date: dateVal };
 
-      // Upload ảnh nếu có file mới
-      if (leftFile) {
-        const up = await uploadToBucket(PHOTOS_BUCKET, leftFile);
-        payload.left_photo_url = up.publicUrl;
+        // Upload ảnh nếu có file mới
+        if (leftFile) {
+          const up = await uploadToBucket(PHOTOS_BUCKET, leftFile);
+          payload.left_photo_url = up.publicUrl;
+        }
+        if (rightFile) {
+          const up = await uploadToBucket(PHOTOS_BUCKET, rightFile);
+          payload.right_photo_url = up.publicUrl;
+        }
+
+        await upsertHeroSettings(payload);
+
+        // Cập nhật UI ngay
+        renderCounter(dateVal);
+        if (payload.left_photo_url || payload.right_photo_url) {
+          const fresh = await fetchHeroSettings();
+          renderHeroPhotos(fresh.left_photo_url, fresh.right_photo_url);
+        }
+
+        // Reset file inputs sau khi lưu
+        if (els.heroLeftPhotoFile) els.heroLeftPhotoFile.value = "";
+        if (els.heroRightPhotoFile) els.heroRightPhotoFile.value = "";
+
+        setStatus(els.counterStatus, "Đã lưu! Khung đếm ngày đẹp hơn rồi nè 💕", "ok");
+      } catch (e2) {
+        setStatus(els.counterStatus, supaErrMsg(e2), "danger");
       }
-      if (rightFile) {
-        const up = await uploadToBucket(PHOTOS_BUCKET, rightFile);
-        payload.right_photo_url = up.publicUrl;
-      }
-
-      await upsertHeroSettings(payload);
-
-      // Cập nhật UI ngay
-      renderCounter(dateVal);
-      if (payload.left_photo_url || payload.right_photo_url) {
-        const fresh = await fetchHeroSettings();
-        renderHeroPhotos(fresh.left_photo_url, fresh.right_photo_url);
-      }
-
-      // Reset file inputs sau khi lưu
-      if (els.heroLeftPhotoFile) els.heroLeftPhotoFile.value = "";
-      if (els.heroRightPhotoFile) els.heroRightPhotoFile.value = "";
-
-      setStatus(els.counterStatus, "Đã lưu! Khung đếm ngày đẹp hơn rồi nè 💕", "ok");
-    } catch (e2) {
-      setStatus(els.counterStatus, supaErrMsg(e2), "danger");
-    }
-  });
+    });
+  } // end if (els.startDateForm)
 
 /* ============================================================
    RLS POLICIES CHẶT CHO CÁC BẢNG HIỆN TẠI (copy chạy trong Supabase SQL Editor)
@@ -1608,128 +1723,138 @@ CREATE POLICY "Allow anon full on voices" ON storage.objects
 
 -- Xong. Reload app và test.
 
-Lưu ý: Với policy "Allow anon full", bất kỳ ai biết SUPABASE_URL + ANON_KEY đều có thể đọc/ghi data.
+Lưu ý QUAN TRỌNG: Với policy "Allow anon full", bất kỳ ai biết SUPABASE_URL + ANON_KEY đều đọc/ghi được HẾT data (nhật ký, ảnh, tin nhắn) mà KHÔNG CẦN mật khẩu. Xem hướng dẫn Cloudflare ở dưới.
 → Đây là lý do bạn **nên** dùng Cloudflare Zero Trust chặn frontend.
 Nếu muốn bảo mật cao hơn nhiều, hãy chuyển sang Supabase Auth thật (tôi có thể giúp chuyển nếu bạn muốn).
 
 ============================================================ */
-  els.diaryForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!sb) return setStatus(els.diaryStatus, "Chưa cấu hình Supabase", "danger");
+  if (els.diaryForm) {
+    els.diaryForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!sb) return setStatus(els.diaryStatus, "Chưa cấu hình Supabase", "danger");
 
-    const payload = {
-      entry_date: els.diaryDate.value,
-      title: els.diaryTitle.value.trim(),
-      content: els.diaryContent.value.trim(),
-    };
+      const payload = {
+        entry_date: els.diaryDate.value,
+        title: els.diaryTitle.value.trim(),
+        content: els.diaryContent.value.trim(),
+      };
 
-    try {
-      setStatus(els.diaryStatus, "Đang thêm...", "muted");
-      await addDiaryEntry(payload);
-      els.diaryTitle.value = "";
-      els.diaryContent.value = "";
-      setStatus(els.diaryStatus, "Đã thêm kỷ niệm!", "ok");
-      renderDiary(await listDiaryEntries());
-    } catch (e2) {
-      setStatus(els.diaryStatus, supaErrMsg(e2), "danger");
-    }
-  });
-
-  els.photoForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!sb) return setStatus(els.photoStatus, "Chưa cấu hình Supabase", "danger");
-
-    const file = els.photoFile.files?.[0];
-    if (!file) return setStatus(els.photoStatus, "Chọn ảnh trước nha", "danger");
-
-    try {
-      setStatus(els.photoStatus, "Đang upload...", "muted");
-      const up = await uploadToBucket(PHOTOS_BUCKET, file);
-      await addPhotoItem({ caption: (els.photoCaption.value || "").trim(), file_path: up.path, public_url: up.publicUrl });
-
-      setPoints(getPoints() + 50);
-      renderPoints();
-
-      els.photoFile.value = "";
-      els.photoCaption.value = "";
-      setStatus(els.photoStatus, "Đã up ảnh!", "ok");
-      renderPhotos(await listPhotos());
-    } catch (e2) {
-      setStatus(els.photoStatus, supaErrMsg(e2), "danger");
-    }
-  });
-
-  els.msgTextForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!sb) return setStatus(els.msgStatus, "Chưa cấu hình Supabase", "danger");
-
-    const txt = (els.msgText.value || "").trim();
-    if (!txt) return;
-
-    try {
-      setStatus(els.msgStatus, "Đang gửi...", "muted");
-      await addMessage({ type: "text", text: txt });
-      els.msgText.value = "";
-      setStatus(els.msgStatus, "Đã gửi!", "ok");
-      renderMessages(await listMessages());
-    } catch (e2) {
-      setStatus(els.msgStatus, supaErrMsg(e2), "danger");
-    }
-  });
-
-  els.btnRecord.addEventListener("click", async () => {
-    try {
-      await startRecording();
-    } catch (e) {
-      setStatus(els.msgStatus, "Không mở được micro. Hãy cho phép quyền micro.", "danger");
-    }
-  });
-
-  els.btnStop.addEventListener("click", () => stopRecording());
-
-  els.btnSendVoice.addEventListener("click", async () => {
-    if (!sb) return setStatus(els.msgStatus, "Chưa cấu hình Supabase", "danger");
-    if (!recordedBlob) return;
-
-    try {
-      setStatus(els.msgStatus, "Đang upload voice...", "muted");
-      const file = new File([recordedBlob], `voice_${Date.now()}.webm`, { type: recordedBlob.type || "audio/webm" });
-      const up = await uploadToBucket(VOICES_BUCKET, file);
-      await addMessage({ type: "voice", public_url: up.publicUrl });
-      recordedBlob = null;
-      if (els.previewAudio) {
-        els.previewAudio.hidden = true;
-        els.previewAudio.src = "";
+      try {
+        setStatus(els.diaryStatus, "Đang thêm...", "muted");
+        await addDiaryEntry(payload);
+        els.diaryTitle.value = "";
+        els.diaryContent.value = "";
+        setStatus(els.diaryStatus, "Đã thêm kỷ niệm!", "ok");
+        renderDiary(await listDiaryEntries());
+      } catch (e2) {
+        setStatus(els.diaryStatus, supaErrMsg(e2), "danger");
       }
-      els.btnSendVoice.disabled = true;
-      setStatus(els.msgStatus, "Đã gửi voice!", "ok");
-      renderMessages(await listMessages());
-    } catch (e2) {
-      setStatus(els.msgStatus, supaErrMsg(e2), "danger");
-    }
-  });
+    });
+  } // end if (els.diaryForm)
+
+  if (els.photoForm) {
+    els.photoForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!sb) return setStatus(els.photoStatus, "Chưa cấu hình Supabase", "danger");
+
+      const file = els.photoFile.files?.[0];
+      if (!file) return setStatus(els.photoStatus, "Chọn ảnh trước nha", "danger");
+
+      try {
+        setStatus(els.photoStatus, "Đang upload...", "muted");
+        const up = await uploadToBucket(PHOTOS_BUCKET, file);
+        await addPhotoItem({ caption: (els.photoCaption.value || "").trim(), file_path: up.path, public_url: up.publicUrl });
+
+        setPoints(getPoints() + 50);
+        renderPoints();
+
+        els.photoFile.value = "";
+        els.photoCaption.value = "";
+        setStatus(els.photoStatus, "Đã up ảnh!", "ok");
+        renderPhotos(await listPhotos());
+      } catch (e2) {
+        setStatus(els.photoStatus, supaErrMsg(e2), "danger");
+      }
+    });
+  } // end if (els.photoForm)
+
+  if (els.msgTextForm) {
+    els.msgTextForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!sb) return setStatus(els.msgStatus, "Chưa cấu hình Supabase", "danger");
+
+      const txt = (els.msgText.value || "").trim();
+      if (!txt) return;
+
+      try {
+        setStatus(els.msgStatus, "Đang gửi...", "muted");
+        await addMessage({ type: "text", text: txt });
+        els.msgText.value = "";
+        setStatus(els.msgStatus, "Đã gửi!", "ok");
+        renderMessages(await listMessages());
+      } catch (e2) {
+        setStatus(els.msgStatus, supaErrMsg(e2), "danger");
+      }
+    });
+  } // end if (els.msgTextForm)
+
+  if (els.btnRecord) {
+    els.btnRecord.addEventListener("click", async () => {
+      try {
+        await startRecording();
+      } catch (e) {
+        setStatus(els.msgStatus, "Không mở được micro. Hãy cho phép quyền micro.", "danger");
+      }
+    });
+  }
+
+  if (els.btnStop) {
+    els.btnStop.addEventListener("click", () => stopRecording());
+  }
+
+  if (els.btnSendVoice) {
+    els.btnSendVoice.addEventListener("click", async () => {
+      if (!sb) return setStatus(els.msgStatus, "Chưa cấu hình Supabase", "danger");
+      if (!recordedBlob) return;
+
+      try {
+        setStatus(els.msgStatus, "Đang upload voice...", "muted");
+        const file = new File([recordedBlob], `voice_${Date.now()}.webm`, { type: recordedBlob.type || "audio/webm" });
+        const up = await uploadToBucket(VOICES_BUCKET, file);
+        await addMessage({ type: "voice", public_url: up.publicUrl });
+        recordedBlob = null;
+        if (els.previewAudio) {
+          els.previewAudio.hidden = true;
+          els.previewAudio.src = "";
+        }
+        els.btnSendVoice.disabled = true;
+        setStatus(els.msgStatus, "Đã gửi voice!", "ok");
+        renderMessages(await listMessages());
+      } catch (e2) {
+        setStatus(els.msgStatus, supaErrMsg(e2), "danger");
+      }
+    });
+  } // end if (els.btnSendVoice)
 }
 
 function boot() {
   sb = initSupabase();
   ensureUnlockedUI();
-  wireEvents();
+  wireEvents();           // wire lock + những gì có sẵn
   switchTab("diary");
 
-  // Tải sớm passcode + shop + redemptions
+  // Chỉ load passcode sớm (không load data private)
   if (sb) {
     loadPasscodes();
   }
-  loadShopItems().finally(() => renderCheckinShopAll());
 
-  // Tải redemptions sớm (nếu đã unlock)
-  if (sb) {
-    reloadRedemptionsCache().then(() => {
-      if (!document.getElementById("app")?.classList.contains("hidden")) {
-        renderRedemptions();
-      }
-    });
-  }
+  // Shop items không nhạy cảm lắm, vẫn có thể load sớm được
+  loadShopItems().finally(() => {
+    // Chỉ render shop nếu đang ở trạng thái mở
+    if (els.app && !els.app.classList.contains("hidden")) {
+      renderCheckinShopAll();
+    }
+  });
 
   try {
     setCustomCursorFromImage("./z7574744147805_ab6b33bf96bfb0962ffc056b20edb4a9.jpg");
@@ -1737,7 +1862,10 @@ function boot() {
     // ignore
   }
 
+  // CHỈ gọi refreshAll (tải nhật ký + ảnh + tin nhắn từ DB) khi đã unlock
   if (localStorage.getItem("love_unlocked") === "1") {
+    // Re-wire một lần nữa để bắt các listener trên nội dung vừa mount
+    wireEvents();
     refreshAll();
   }
 }
